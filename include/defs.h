@@ -1,7 +1,8 @@
 #include <stdint.h>
 #include <limits.h>
 
-#define TYPE float
+//#define TYPE float
+#define TYPE double
 
 #define INT64 int64_t
 

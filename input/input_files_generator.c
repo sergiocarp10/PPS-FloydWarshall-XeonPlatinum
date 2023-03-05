@@ -13,10 +13,12 @@
 
 #define N_COUNT 3
 const int n_array[N_COUNT] = {4096, 8192, 16384};
-//const int n_array[N_COUNT] = {4096, 8192, 16384, 32768, 65536};
 
-#define BS_COUNT 4
-const int bs_array[BS_COUNT] = {0, 64, 128,256};
+// #define N_COUNT 1
+// const int n_array[N_COUNT] = {4096};
+
+#define BS_COUNT 5
+const int bs_array[BS_COUNT] = {0, 32, 64, 128, 256};
 
 
 void initInputGraphStandard(TYPE* inputGraph, int n, int GD){
