@@ -96,7 +96,7 @@ void runTest(t_APSP_graph* G){
 		}
 	#endif
 	if(!printCsvRes){
-		printf("Executing Floyd Warshal %s (%s): . . .\n", getFloydVersion(), getFloydName());
+		printf("Executing Floyd Warshall - %s (%s): . . .\n", getFloydVersion(), getFloydName());
 	}
 	startTime = dwalltime();
 	floydWarshall(G->D, G->P, G->n, pArgs.t);

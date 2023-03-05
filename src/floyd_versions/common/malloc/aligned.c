@@ -1,5 +1,8 @@
 #include <stdlib.h>
 
+// MODIFICACIÓN
+#include <malloc.h>
+
 //Public
 void* abs_malloc(INT64 vectorLength){
 	#ifdef INTEL_ARC

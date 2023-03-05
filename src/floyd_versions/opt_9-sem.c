@@ -7,14 +7,20 @@
 
 #define UNROLL_FACTOR BS/(SIMD_WIDTH/TYPE_SIZE)
 
+// ----------------- BLOQUE AGREGADO -------------------
+
+#include <semaphore.h>
+
+// ---------------- FIN BLOQUE AGREGADO --------------
+
 //Public
 char* getFloydName(){
-	return "with loop unroll";
+	return "semaphores with loop unroll";
 }
 
 //Public
 char* getFloydVersion(){
-	return "Opt-7_8";
+	return "Opt-9-Sem";
 }
 
 static inline void FW_BLOCK(TYPE* const graph, const INT64 d1, const INT64 d2, const INT64 d3, int* const path, const INT64 base, int* const tmp1, int* const tmp2) __attribute__((always_inline));
@@ -137,9 +143,32 @@ void floydWarshall(TYPE* D, int* P, int n, int t){
 	row_of_blocks_disp = n*BS;
 	num_of_bock_elems = BS*BS;
 	
-	#pragma omp parallel default(none) firstprivate(r,row_of_blocks_disp,num_of_bock_elems,D,P) num_threads(t)
+	// --------------------------- BLOQUE AGREGADO -----------------------
+
+	INT64 x, y;
+	sem_t** S;
+
+	// asignación de memoria
+	S = (sem_t**) malloc(r * sizeof(sem_t*));
+	for (x=0; x<r; x++) S[x] = (sem_t*) malloc(r * sizeof(sem_t));
+	
+	for (x=0; x<r; x++){
+		for (y=0; y<r; y++){
+			sem_init(&S[x][y], 0, 0);
+		}
+	}
+
+	// ------------------------- FIN BLOQUE AGREGADO -----------------------
+	
+	// Modificación: shared(pendientes, cv, mutex)
+	
+	#pragma omp parallel shared(S) default(none) firstprivate(r,row_of_blocks_disp,num_of_bock_elems,D,P) num_threads(t)
 	{
 		INT64 i, j, k, b, kj, ik, kk, ij, k_row_disp, k_col_disp, i_row_disp, j_col_disp, w;
+		
+		// Variable agregada
+		INT64 aux;
+		
 		#ifndef NO_PATH
 			int* tmp1 = NULL;
 			int* tmp2 = NULL;
@@ -147,6 +176,12 @@ void floydWarshall(TYPE* D, int* P, int n, int t){
 			int tmp1[BS], tmp2[BS];
 			//tmp1 and tmp2 are used as a patch to avoid a compiler bug which makes it lose performance instead of winning while omitting the compute of the P patrix
 		#endif
+		
+		// inicialización de semaforos
+		//#pragma omp for collapse(2)
+		
+		
+		
 		for(k=0; k<r; k++){
 			b = k*BS;
 			k_row_disp = k*row_of_blocks_disp;
@@ -157,20 +192,44 @@ void floydWarshall(TYPE* D, int* P, int n, int t){
 			FW_BLOCK_PARALLEL(D, kk, kk, kk, P, b, tmp1, tmp2);
 
 			//Phase 2 y 3
-			#pragma omp for schedule(dynamic)
+			#pragma omp for schedule(dynamic) nowait
 			for(w=0; w<r*2; w++){
-				if(w<r){ //Phase 2
+				if(w<r){ 
+					//Phase 2
 					j = w;
-					if(j == k)
-						continue;
+					if(j == k) continue;
 					kj = k_row_disp + j*num_of_bock_elems;
 					FW_BLOCK(D, kj, kk, kj, P, b, tmp1, tmp2);
-				} else { //Phase 3
+					
+					// -------------- BLOQUE AGREGADO -------------------
+
+					// Finalizó el computo del bloque (k,j) = (k,w)
+					// Modif: se debe decrementar pendientes de la columna actual "j"
+					for (aux=0; aux<r; aux++){
+						if (aux == k) continue;					// se ignora actual (k,j)
+						sem_post(&S[aux][j]);
+					}
+
+					// -------------- FIN BLOQUE AGREGADO -----------------
+					
+				} else { 
+					//Phase 3
 					i = w - r;
-					if(i == k)
-						continue;
+					if(i == k) continue;
 					ik = i*row_of_blocks_disp + k_col_disp;
 					FW_BLOCK(D, ik, ik, kk, P, b, tmp1, tmp2);
+					
+					// -------------- BLOQUE AGREGADO -------------------
+
+					// Finalizo el computo del bloque (i,k) = (w-r, k)
+					// Modif: se debe decrementar pendientes de la fila actual "i"
+					for (aux=0; aux<r; aux++) {
+						if (aux == k) continue;					// se ignora actual (i,k)
+						sem_post(&S[i][aux]);
+					}
+
+					// -------------- FIN BLOQUE AGREGADO -----------------
+					
 				}
 			}
 
@@ -178,8 +237,16 @@ void floydWarshall(TYPE* D, int* P, int n, int t){
 			#pragma omp for collapse(2) schedule(dynamic)
 			for(i=0; i<r; i++){
 				for(j=0; j<r; j++){
-					if( (j == k) || (i == k) )
-						continue;
+					if( (j == k) || (i == k) ) continue;
+					
+					// ----------- BLOQUE AGREGADO -----------------
+
+					// Esperar que se computen los bloques (k,j) e (i,k)
+					sem_wait(&S[i][j]);
+					sem_wait(&S[i][j]);
+
+					// ---------- FIN BLOQUE AGREGADO --------------
+					
 					i_row_disp = i*row_of_blocks_disp;
 					ik = i_row_disp + k_col_disp;
 					j_col_disp = j*num_of_bock_elems;
@@ -190,4 +257,12 @@ void floydWarshall(TYPE* D, int* P, int n, int t){
 			}
 		}
 	}
+	
+	// --------------------------- BLOQUE AGREGADO -----------------------
+
+	// liberación de memoria reservada
+	for (x=0; x<r; x++) free(S[x]);
+	free(S);
+
+	// ------------------------- FIN BLOQUE AGREGADO -----------------------
 }
